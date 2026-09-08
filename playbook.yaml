@@ -38,10 +38,10 @@
         networks:
           - name: wordpress_network
         env:
-          MYSQL_ROOT_PASSWORD: "{{ db_root_password }}"
-          MYSQL_DATABASE: "{{ db_name }}"
-          MYSQL_USER: "{{ db_user }}"
-          MYSQL_PASSWORD: "{{ db_password }}"
+          MYSQL_ROOT_PASSWORD: "{{ db_root_password | string }}"
+          MYSQL_DATABASE: "{{ db_name | string }}"
+          MYSQL_USER: "{{ db_user | string }}"
+          MYSQL_PASSWORD: "{{ db_password | string }}"
         volumes:
           - wordpress_db_data:/var/lib/mysql
 
@@ -57,8 +57,8 @@
           - "{{ wordpress_port }}:80"
         env:
           WORDPRESS_DB_HOST: wordpress_db:3306
-          WORDPRESS_DB_NAME: "{{ db_name }}"
-          WORDPRESS_DB_USER: "{{ db_user }}"
-          WORDPRESS_DB_PASSWORD: "{{ db_password }}"
+          WORDPRESS_DB_NAME: "{{ db_name | string }}"
+          WORDPRESS_DB_USER: "{{ db_user | string }}"
+          WORDPRESS_DB_PASSWORD: "{{ db_password | string }}"
         volumes:
           - wordpress_data:/var/www/html
