@@ -1,12 +1,64 @@
 ---
-- name: Home work 1
-  hosts: carrier
+- name: Установка Docker и запуск WordPress
+  hosts: servers
+  become: true
+
+  vars:
+    wordpress_port: 8080
+    db_name: wordpress
+    db_user: wordpress
+    db_password: example
+    db_root_password: example
+
   tasks:
-    - name: Display Configuration Variables
-      ansible.builtin.debug:
-        msg:
-          - "wordpress: {{ is_wordpress }}" # True or False
-          - "wordpress_port: {{ wordpress_port }}" # 80 or 8080 or whatewer
-          - "wordpress_db_name: {{ wordpress_db_name }}" # WP database name
-          - "db_host: {{ db_host }}" # container name
-          - "db_pass: {{ db_pass }}" # root password
+    - name: Установка Docker
+      ansible.builtin.apt:
+        name:
+          - docker.io
+          - python3-requests
+        state: present
+        update_cache: true
+
+    - name: Запуск службы Docker
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Создание сети для контейнеров
+      community.docker.docker_network:
+        name: wordpress_network
+
+    - name: Запуск контейнера MySQL
+      community.docker.docker_container:
+        name: wordpress_db
+        image: mysql:8.0
+        state: started
+        restart_policy: unless-stopped
+        networks:
+          - name: wordpress_network
+        env:
+          MYSQL_ROOT_PASSWORD: "{{ db_root_password | string }}"
+          MYSQL_DATABASE: "{{ db_name | string }}"
+          MYSQL_USER: "{{ db_user | string }}"
+          MYSQL_PASSWORD: "{{ db_password | string }}"
+        volumes:
+          - wordpress_db_data:/var/lib/mysql
+
+    - name: Запуск контейнера WordPress
+      community.docker.docker_container:
+        name: wordpress
+        image: wordpress:php8.3-apache
+        state: started
+        restart_policy: unless-stopped
+        networks:
+          - name: wordpress_network
+        published_ports:
+          - "{{ wordpress_port }}:80"
+        env:
+          WORDPRESS_DB_HOST: wordpress_db:3306
+          WORDPRESS_DB_NAME: "{{ db_name | string }}"
+          WORDPRESS_DB_USER: "{{ db_user | string }}"
+          WORDPRESS_DB_PASSWORD: "{{ db_password | string }}"
+        volumes:
+          - wordpress_data:/var/www/html
