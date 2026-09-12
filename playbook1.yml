@@ -3,12 +3,8 @@
   hosts: carrier
   become: true
 
-  vars:
-    wordpress_port: 8080
-    db_name: wordpress
-    db_user: wordpress
-    db_password: example
-    db_root_password: example
+  vars_files:
+    - vars/wordpress.yml
 
   tasks:
     - name: Подготовка Docker
