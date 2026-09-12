@@ -12,6 +12,7 @@
       --server-id=2
       --relay-log=relay-bin
       --read-only=ON
+      --replicate-do-db={{ db_name | quote }}
     state: started
     restart_policy: unless-stopped
     stop_timeout: 60

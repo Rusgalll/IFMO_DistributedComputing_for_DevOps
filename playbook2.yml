@@ -1,5 +1,5 @@
 ---
-- name: Подготовка основного MySQL и реплики
+- name: Настройка репликации MySQL для WordPress
   hosts: carrier
   become: true
 
@@ -17,3 +17,6 @@
 
     - name: Подготовка реплики MySQL
       ansible.builtin.import_tasks: tasks/mysql_replica.yml
+
+    - name: Настройка и проверка репликации
+      ansible.builtin.import_tasks: tasks/mysql_replication.yml

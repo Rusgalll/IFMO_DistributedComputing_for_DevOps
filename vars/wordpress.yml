@@ -4,3 +4,4 @@ db_name: wordpress
 db_user: wordpress
 db_password: example
 db_root_password: example
+db_replication_password: replication_example

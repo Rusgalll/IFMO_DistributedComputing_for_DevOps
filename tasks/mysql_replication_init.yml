@@ -1,0 +1,83 @@
+---
+# Выполняется только для реплики, у которой ещё не настроен источник
+- name: Создание пользователя репликации на основном сервере
+  community.docker.docker_container_exec:
+    container: wordpress_db
+    command: mysql --user=root
+    stdin: |
+      SET SESSION sql_mode = 'NO_BACKSLASH_ESCAPES';
+      CREATE USER IF NOT EXISTS 'replicator'@'%' IDENTIFIED BY '{{ db_replication_password | string | replace("'", "''") }}';
+      ALTER USER 'replicator'@'%' IDENTIFIED BY '{{ db_replication_password | string | replace("'", "''") }}';
+      GRANT REPLICATION SLAVE ON *.* TO 'replicator'@'%';
+  register: replication_user
+  failed_when: replication_user.rc != 0
+  no_log: true
+
+- name: Создание каталога для первоначальной копии базы
+  ansible.builtin.file:
+    path: /var/backups/wordpress
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+# Снимок InnoDB и позиция журнала берутся вместе, чтобы не пропустить изменения.
+- name: Сохранение базы WordPress в файл вместе с позицией журнала
+  ansible.builtin.shell: >-
+    umask 077;
+    docker exec -e MYSQL_PWD wordpress_db
+    mysqldump --user=root --single-transaction --quick
+    --source-data=2 --set-gtid-purged=OFF --hex-blob
+    --routines --events --triggers --databases {{ db_name | quote }}
+    > /var/backups/wordpress/initial.sql
+  environment:
+    MYSQL_PWD: "{{ db_root_password | string }}"
+  changed_when: true
+  no_log: true
+
+- name: Чтение позиции журнала из дампа
+  ansible.builtin.command:
+    argv:
+      - grep
+      - -m
+      - '1'
+      - -E
+      - '^-- CHANGE (REPLICATION SOURCE|MASTER) TO'
+      - /var/backups/wordpress/initial.sql
+  register: dump_position
+  changed_when: false
+
+- name: Сохранение имени журнала и позиции снимка
+  ansible.builtin.set_fact:
+    replication_log_file: >-
+      {{ (dump_position.stdout | regex_findall("(?:SOURCE|MASTER)_LOG_FILE='([^']+)'")) | first }}
+    replication_log_position: >-
+      {{ (dump_position.stdout | regex_findall('(?:SOURCE|MASTER)_LOG_POS=([0-9]+)')) | first }}
+
+- name: Восстановление существующих данных только на реплике
+  ansible.builtin.shell: >-
+    docker exec -i -e MYSQL_PWD wordpress_db_replica
+    mysql --user=root < /var/backups/wordpress/initial.sql
+  environment:
+    MYSQL_PWD: "{{ db_root_password | string }}"
+  changed_when: true
+  no_log: true
+
+# Источник задаётся после успешного восстановления. При повторном запуске снимок не заливается заново.
+- name: Подключение реплики с позиции восстановленного снимка
+  community.docker.docker_container_exec:
+    container: wordpress_db_replica
+    command: mysql --user=root
+    stdin: |
+      SET SESSION sql_mode = 'NO_BACKSLASH_ESCAPES';
+      CHANGE REPLICATION SOURCE TO
+        SOURCE_HOST='wordpress_db',
+        SOURCE_PORT=3306,
+        SOURCE_USER='replicator',
+        SOURCE_PASSWORD='{{ db_replication_password | string | replace("'", "''") }}',
+        SOURCE_LOG_FILE='{{ replication_log_file }}',
+        SOURCE_LOG_POS={{ replication_log_position | int }},
+        GET_SOURCE_PUBLIC_KEY=1;
+  register: replication_config
+  failed_when: replication_config.rc != 0
+  no_log: true
