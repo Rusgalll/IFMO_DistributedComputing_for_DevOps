@@ -1,0 +1,23 @@
+---
+- name: Создание тома для реплики MySQL
+  community.docker.docker_volume:
+    name: wordpress_db_replica_data
+    state: present
+
+- name: Запуск контейнера реплики MySQL
+  community.docker.docker_container:
+    name: wordpress_db_replica
+    image: mysql:8.0
+    command: >-
+      --server-id=2
+      --relay-log=relay-bin
+      --read-only=ON
+    state: started
+    restart_policy: unless-stopped
+    stop_timeout: 60
+    networks:
+      - name: wordpress_network
+    env:
+      MYSQL_ROOT_PASSWORD: "{{ db_root_password | string }}"
+    volumes:
+      - wordpress_db_replica_data:/var/lib/mysql

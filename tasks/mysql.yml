@@ -8,6 +8,8 @@
   community.docker.docker_container:
     name: wordpress_db
     image: mysql:8.0
+    command: "{{ mysql_command | default(omit) }}"
+    stop_timeout: 60
     state: started
     restart_policy: unless-stopped
     networks:
