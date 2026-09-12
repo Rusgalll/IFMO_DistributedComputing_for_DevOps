@@ -1,0 +1,21 @@
+---
+- name: Создание тома для MySQL
+  community.docker.docker_volume:
+    name: wordpress_db_data
+    state: present
+
+- name: Запуск контейнера MySQL
+  community.docker.docker_container:
+    name: wordpress_db
+    image: mysql:8.0
+    state: started
+    restart_policy: unless-stopped
+    networks:
+      - name: wordpress_network
+    env:
+      MYSQL_ROOT_PASSWORD: "{{ db_root_password | string }}"
+      MYSQL_DATABASE: "{{ db_name | string }}"
+      MYSQL_USER: "{{ db_user | string }}"
+      MYSQL_PASSWORD: "{{ db_password | string }}"
+    volumes:
+      - wordpress_db_data:/var/lib/mysql
