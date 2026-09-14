@@ -1,0 +1,17 @@
+---
+- name: Установка библиотек и клиента для MySQL-модулей
+  ansible.builtin.apt:
+    name:
+      - python3-pymysql
+      - default-mysql-client
+    state: present
+    update_cache: true
+
+- name: Создание каталогов для сокетов MySQL
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - "{{ mysql_primary_socket_dir }}"
+    - "{{ mysql_replica_socket_dir }}"

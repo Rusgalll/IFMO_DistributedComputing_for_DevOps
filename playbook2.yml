@@ -7,9 +7,14 @@
     - vars/wordpress.yml
 
   tasks:
+    - name: Подготовка зависимостей и каталогов для MySQL-модулей
+      ansible.builtin.import_tasks: tasks/mysql_modules.yml
+
     - name: Подготовка основного сервера MySQL
       ansible.builtin.import_tasks: tasks/mysql.yml
       vars:
+        mysql_socket_volumes:
+          - "{{ mysql_primary_socket_dir }}:/var/run/mysqld"
         mysql_command: >-
           --server-id=1
           --log-bin=mysql-bin
@@ -17,6 +22,9 @@
 
     - name: Подготовка реплики MySQL
       ansible.builtin.import_tasks: tasks/mysql_replica.yml
+
+    - name: Проверка подключения MySQL-модулей
+      ansible.builtin.import_tasks: tasks/mysql_connections.yml
 
     - name: Настройка и проверка репликации
       ansible.builtin.import_tasks: tasks/mysql_replication.yml

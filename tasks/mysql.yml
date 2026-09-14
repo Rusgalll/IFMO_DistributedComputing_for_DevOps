@@ -19,5 +19,4 @@
       MYSQL_DATABASE: "{{ db_name | string }}"
       MYSQL_USER: "{{ db_user | string }}"
       MYSQL_PASSWORD: "{{ db_password | string }}"
-    volumes:
-      - wordpress_db_data:/var/lib/mysql
+    volumes: "{{ ['wordpress_db_data:/var/lib/mysql'] + (mysql_socket_volumes | default([])) }}"

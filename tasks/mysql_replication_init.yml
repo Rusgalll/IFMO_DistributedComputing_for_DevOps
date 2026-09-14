@@ -1,19 +1,20 @@
 ---
-# Выполняется только для реплики, у которой ещё не настроен источник
-- name: Создание пользователя репликации на основном сервере
-  community.docker.docker_container_exec:
-    container: wordpress_db
-    command: mysql --user=root
-    stdin: |
-      SET SESSION sql_mode = 'NO_BACKSLASH_ESCAPES';
-      CREATE USER IF NOT EXISTS 'replicator'@'%' IDENTIFIED BY '{{ db_replication_password | string | replace("'", "''") }}';
-      ALTER USER 'replicator'@'%' IDENTIFIED BY '{{ db_replication_password | string | replace("'", "''") }}';
-      GRANT REPLICATION SLAVE ON *.* TO 'replicator'@'%';
-  register: replication_user
-  failed_when: replication_user.rc != 0
+- name: Создание пользователя репликации
+  ansible.mysql.mysql_user:
+    login_unix_socket: "{{ mysql_primary_socket_dir }}/mysqld.sock"
+    login_user: root
+    login_password: "{{ db_root_password | string }}"
+    config_file: ''
+    name: replicator
+    host: '%'
+    plugin: caching_sha2_password
+    plugin_auth_string: "{{ db_replication_password | string }}"
+    salt: wordpress-repl-salt1
+    priv: '*.*:REPLICATION SLAVE'
+    state: present
   no_log: true
 
-- name: Создание каталога для первоначальной копии базы
+- name: Создание каталога для дампа
   ansible.builtin.file:
     path: /var/backups/wordpress
     state: directory
@@ -21,63 +22,91 @@
     group: root
     mode: '0700'
 
-# Снимок InnoDB и позиция журнала берутся вместе, чтобы не пропустить изменения.
-- name: Сохранение базы WordPress в файл вместе с позицией журнала
-  ansible.builtin.shell: >-
-    umask 077;
-    docker exec -e MYSQL_PWD wordpress_db
-    mysqldump --user=root --single-transaction --quick
-    --source-data=2 --set-gtid-purged=OFF --hex-blob
-    --routines --events --triggers --databases {{ db_name | quote }}
-    > /var/backups/wordpress/initial.sql
-  environment:
-    MYSQL_PWD: "{{ db_root_password | string }}"
-  changed_when: true
+- name: Остановка WordPress на время переноса данных
+  community.docker.docker_container:
+    name: wordpress
+    state: stopped
+    stop_timeout: 60
+
+- name: Сохранение базы WordPress перед переносом
+  ansible.mysql.mysql_db:
+    name: "{{ db_name }}"
+    state: dump
+    target: /var/backups/wordpress/initial.sql
+    single_transaction: true
+    quick: true
+    hex_blob: true
+    dump_extra_args: --set-gtid-purged=OFF --routines --events --triggers --databases
+  when: not replay_pending.stat.exists
   no_log: true
 
-- name: Чтение позиции журнала из дампа
-  ansible.builtin.command:
-    argv:
-      - grep
-      - -m
-      - '1'
-      - -E
-      - '^-- CHANGE (REPLICATION SOURCE|MASTER) TO'
-      - /var/backups/wordpress/initial.sql
-  register: dump_position
+- name: Ограничение доступа к дампу
+  ansible.builtin.file:
+    path: /var/backups/wordpress/initial.sql
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: Отметка начала переноса
+  ansible.builtin.copy:
+    dest: /var/backups/wordpress/replay.pending
+    content: "Перенос не завершён. Сохранённый дамп нельзя перезаписывать.\n"
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: Остановка репликации перед повторной попыткой переноса
+  ansible.mysql.mysql_replication:
+    mode: stopreplica
+  when: replica_before.Is_Replica | default(false)
+  no_log: true
+
+- name: Получение позиции журнала перед восстановлением дампа
+  ansible.mysql.mysql_replication:
+    login_unix_socket: "{{ mysql_primary_socket_dir }}/mysqld.sock"
+    mode: getprimary
+  register: replay_position
   changed_when: false
-
-- name: Сохранение имени журнала и позиции снимка
-  ansible.builtin.set_fact:
-    replication_log_file: >-
-      {{ (dump_position.stdout | regex_findall("(?:SOURCE|MASTER)_LOG_FILE='([^']+)'")) | first }}
-    replication_log_position: >-
-      {{ (dump_position.stdout | regex_findall('(?:SOURCE|MASTER)_LOG_POS=([0-9]+)')) | first }}
-
-- name: Восстановление существующих данных только на реплике
-  ansible.builtin.shell: >-
-    docker exec -i -e MYSQL_PWD wordpress_db_replica
-    mysql --user=root < /var/backups/wordpress/initial.sql
-  environment:
-    MYSQL_PWD: "{{ db_root_password | string }}"
-  changed_when: true
   no_log: true
 
-# Источник задаётся после успешного восстановления. При повторном запуске снимок не заливается заново.
-- name: Подключение реплики с позиции восстановленного снимка
-  community.docker.docker_container_exec:
-    container: wordpress_db_replica
-    command: mysql --user=root
-    stdin: |
-      SET SESSION sql_mode = 'NO_BACKSLASH_ESCAPES';
-      CHANGE REPLICATION SOURCE TO
-        SOURCE_HOST='wordpress_db',
-        SOURCE_PORT=3306,
-        SOURCE_USER='replicator',
-        SOURCE_PASSWORD='{{ db_replication_password | string | replace("'", "''") }}',
-        SOURCE_LOG_FILE='{{ replication_log_file }}',
-        SOURCE_LOG_POS={{ replication_log_position | int }},
-        GET_SOURCE_PUBLIC_KEY=1;
-  register: replication_config
-  failed_when: replication_config.rc != 0
+- name: Подключение реплики с позиции перед восстановлением
+  ansible.mysql.mysql_replication:
+    mode: changeprimary
+    primary_host: wordpress_db
+    primary_port: 3306
+    primary_user: replicator
+    primary_password: "{{ db_replication_password | string }}"
+    primary_log_file: "{{ replay_position.File }}"
+    primary_log_pos: "{{ replay_position.Position | int }}"
   no_log: true
+
+- name: Разрешение получения ключа для передачи пароля
+  ansible.mysql.mysql_query:
+    query: CHANGE REPLICATION SOURCE TO GET_SOURCE_PUBLIC_KEY=1;
+  no_log: true
+
+- name: Запуск репликации перед восстановлением дампа
+  ansible.mysql.mysql_replication:
+    mode: startreplica
+  no_log: true
+
+- name: Восстановление дампа на основной БД с записью изменений в журнал
+  ansible.mysql.mysql_db:
+    name: all
+    state: import
+    target: /var/backups/wordpress/initial.sql
+    sql_log_bin: true
+  no_log: true
+
+- name: Проверка получения данных репликой
+  ansible.builtin.include_tasks: mysql_replication_check.yml
+
+- name: Удаление отметки незавершённого переноса
+  ansible.builtin.file:
+    path: /var/backups/wordpress/replay.pending
+    state: absent
+
+- name: Запуск WordPress после успешного переноса
+  community.docker.docker_container:
+    name: wordpress
+    state: started

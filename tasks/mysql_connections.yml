@@ -1,0 +1,17 @@
+---
+- name: Проверка доступа к основной БД и реплике через сокеты
+  ansible.mysql.mysql_query:
+    login_unix_socket: "{{ item }}/mysqld.sock"
+    login_user: root
+    login_password: "{{ db_root_password | string }}"
+    config_file: ''
+    query: SELECT 1;
+  loop:
+    - "{{ mysql_primary_socket_dir }}"
+    - "{{ mysql_replica_socket_dir }}"
+  register: mysql_connection
+  until: mysql_connection is succeeded
+  retries: 30
+  delay: 5
+  changed_when: false
+  no_log: true

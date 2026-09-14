@@ -1,90 +1,47 @@
 ---
-- name: Настройка репликации через команды MySQL
+- name: Управление репликацией MySQL
   module_defaults:
-    community.docker.docker_container_exec:
-      env:
-        MYSQL_PWD: "{{ db_root_password | string }}"
-      timeout: 300
+    ansible.mysql.mysql_replication:
+      login_unix_socket: "{{ mysql_replica_socket_dir }}/mysqld.sock"
+      login_user: root
+      login_password: "{{ db_root_password | string }}"
+      config_file: ''
+      fail_on_error: true
+    ansible.mysql.mysql_query:
+      login_unix_socket: "{{ mysql_replica_socket_dir }}/mysqld.sock"
+      login_user: root
+      login_password: "{{ db_root_password | string }}"
+      config_file: ''
+    ansible.mysql.mysql_db:
+      login_unix_socket: "{{ mysql_primary_socket_dir }}/mysqld.sock"
+      login_user: root
+      login_password: "{{ db_root_password | string }}"
+      config_file: ''
   block:
-    - name: Ожидание готовности обоих серверов MySQL
-      community.docker.docker_container_exec:
-        container: "{{ item }}"
-        command: mysql --user=root --host=127.0.0.1 --execute='SELECT 1;'
-      loop:
-        - wordpress_db
-        - wordpress_db_replica
-      register: mysql_ready
-      until: mysql_ready.rc | default(1) == 0
-      retries: 30
-      delay: 5
-      changed_when: false
-      no_log: true
-
-    - name: Получение текущих настроек репликации
-      community.docker.docker_container_exec:
-        container: wordpress_db_replica
-        command: mysql --user=root --execute='SHOW REPLICA STATUS\G'
+    - name: Получение текущих настроек реплики
+      ansible.mysql.mysql_replication:
+        mode: getreplica
       register: replica_before
-      failed_when: replica_before.rc != 0
       changed_when: false
       no_log: true
 
-    - name: Первоначальное копирование данных и подключение реплики
+    - name: Проверка незавершённого переноса
+      ansible.builtin.stat:
+        path: /var/backups/wordpress/replay.pending
+      register: replay_pending
+
+    - name: Первоначальный перенос данных через журнал основной БД
       ansible.builtin.include_tasks: mysql_replication_init.yml
-      when: replica_before.stdout | trim == ''
+      when: not (replica_before.Is_Replica | default(false)) or replay_pending.stat.exists
 
-    - name: Запуск потоков репликации
-      community.docker.docker_container_exec:
-        container: wordpress_db_replica
-        command: mysql --user=root --execute='START REPLICA;'
-      register: replica_start
-      failed_when: replica_start.rc != 0
-      when: >-
-        'Replica_IO_Running: Yes' not in replica_before.stdout or
-        'Replica_SQL_Running: Yes' not in replica_before.stdout
+    - name: Запуск репликации
+      ansible.mysql.mysql_replication:
+        mode: startreplica
       no_log: true
 
-    - name: Ожидание запуска обоих потоков репликации
-      community.docker.docker_container_exec:
-        container: wordpress_db_replica
-        command: mysql --user=root --execute='SHOW REPLICA STATUS\G'
-      register: replica_status
-      until:
-        - replica_status.rc | default(1) == 0
-        - "'Replica_IO_Running: Yes' in (replica_status.stdout | default(''))"
-        - "'Replica_SQL_Running: Yes' in (replica_status.stdout | default(''))"
-      retries: 30
-      delay: 5
-      changed_when: false
-      no_log: true
-
-    - name: Получение позиции основного сервера для проверки синхронизации
-      community.docker.docker_container_exec:
-        container: wordpress_db
-        command: mysql --user=root --batch --skip-column-names --execute='SHOW MASTER STATUS;'
-      register: source_position
-      failed_when: source_position.rc != 0 or source_position.stdout.split() | length < 2
-      changed_when: false
-      no_log: true
-
-    - name: Ожидание применения изменений на реплике
-      community.docker.docker_container_exec:
-        container: wordpress_db_replica
-        argv:
-          - mysql
-          - --user=root
-          - --batch
-          - --skip-column-names
-        stdin: >-
-          SELECT SOURCE_POS_WAIT('{{ source_position.stdout.split()[0] }}',
-          {{ source_position.stdout.split()[1] | int }}, 120);
-      register: replica_sync
-      changed_when: false
-      failed_when: >-
-        replica_sync.rc != 0 or
-        (replica_sync.stdout | trim | int(default=-1)) < 0
-      no_log: true
+    - name: Проверка синхронизации
+      ansible.builtin.include_tasks: mysql_replication_check.yml
 
 - name: Результат проверки репликации
   ansible.builtin.debug:
-    msg: Реплика получила и применила изменения до проверенной позиции основного сервера.
+    msg: Реплика подключена и применила изменения основной БД.

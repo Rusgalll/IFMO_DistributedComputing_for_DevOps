@@ -1,0 +1,33 @@
+---
+- name: Ожидание работы обоих потоков репликации
+  ansible.mysql.mysql_replication:
+    mode: getreplica
+  register: replica_status
+  until:
+    - (replica_status.Replica_IO_Running | default('No')) == 'Yes'
+    - (replica_status.Replica_SQL_Running | default('No')) == 'Yes'
+  retries: 30
+  delay: 5
+  changed_when: false
+  no_log: true
+
+- name: Получение позиции основной БД для проверки
+  ansible.mysql.mysql_replication:
+    login_unix_socket: "{{ mysql_primary_socket_dir }}/mysqld.sock"
+    mode: getprimary
+  register: source_position
+  changed_when: false
+  no_log: true
+
+- name: Ожидание применения изменений на реплике
+  ansible.mysql.mysql_query:
+    query: SELECT SOURCE_POS_WAIT(%s, %s, 120) AS applied;
+    positional_args:
+      - "{{ source_position.File }}"
+      - "{{ source_position.Position | int }}"
+  register: replica_sync
+  changed_when: false
+  failed_when: >-
+    (replica_sync is failed) or
+    (replica_sync.query_result[0][0].applied | int(default=-1)) < 0
+  no_log: true
