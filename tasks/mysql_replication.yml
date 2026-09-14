@@ -32,7 +32,10 @@
 
     - name: Первоначальный перенос данных через журнал основной БД
       ansible.builtin.include_tasks: mysql_replication_init.yml
-      when: not (replica_before.Is_Replica | default(false)) or replay_pending.stat.exists
+      when: >-
+        (mysql_resync | default(false) | bool) or
+        not (replica_before.Is_Replica | default(false)) or
+        replay_pending.stat.exists
 
     - name: Запуск репликации
       ansible.mysql.mysql_replication:

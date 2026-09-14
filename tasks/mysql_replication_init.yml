@@ -61,6 +61,12 @@
   when: replica_before.Is_Replica | default(false)
   no_log: true
 
+- name: Сброс старой позиции и журналов реплики перед переносом
+  ansible.mysql.mysql_replication:
+    mode: resetreplica
+  when: replica_before.Is_Replica | default(false)
+  no_log: true
+
 - name: Получение позиции журнала перед восстановлением дампа
   ansible.mysql.mysql_replication:
     login_unix_socket: "{{ mysql_primary_socket_dir }}/mysqld.sock"
