@@ -1,0 +1,14 @@
+---
+mysql_monitoring_user: exporter
+mysql_monitoring_password: monitoring_example
+mysql_exporter_image: prom/mysqld-exporter:v0.17.2
+
+mysql_exporters:
+  - name: mysql_exporter_primary
+    database_host: wordpress_db
+    socket_dir: "{{ mysql_primary_socket_dir }}"
+    port: 9104
+  - name: mysql_exporter_replica
+    database_host: wordpress_db_replica
+    socket_dir: "{{ mysql_replica_socket_dir }}"
+    port: 9105

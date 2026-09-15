@@ -1,8 +1,18 @@
 ---
-- name: Home work 3
+- name: Настройка сбора метрик MySQL
   hosts: carrier
+  become: true
+
+  vars_files:
+    - vars/wordpress.yml
+    - vars/monitoring.yml
+
   tasks:
-    - name: Display Configuration Variables
-      ansible.builtin.debug:
-        msg:
-          - "monitoring_url: {{ monitoring_url }}" # monitoring url including port
+    - name: Проверка подключения к кластеру
+      ansible.builtin.import_tasks: tasks/mysql/mysql_connections.yml
+
+    - name: Создание пользователей мониторинга
+      ansible.builtin.import_tasks: tasks/monitoring/mysql_monitoring_users.yml
+
+    - name: Запуск экспортёров метрик MySQL
+      ansible.builtin.import_tasks: tasks/monitoring/mysql_exporters.yml

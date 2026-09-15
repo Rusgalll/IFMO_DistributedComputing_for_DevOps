@@ -1,0 +1,34 @@
+---
+- name: Запуск контейнеров экспортёров MySQL
+  community.docker.docker_container:
+    name: "{{ item.name }}"
+    image: "{{ mysql_exporter_image }}"
+    state: started
+    restart_policy: unless-stopped
+    command:
+      - "--mysqld.address={{ item.database_host }}:3306"
+      - "--mysqld.username={{ mysql_monitoring_user }}"
+      - --collect.slave_status
+    env:
+      MYSQLD_EXPORTER_PASSWORD: "{{ mysql_monitoring_password | string }}"
+    networks:
+      - name: wordpress_network
+    published_ports:
+      - "127.0.0.1:{{ item.port }}:9104"
+  loop: "{{ mysql_exporters }}"
+  no_log: true
+
+- name: Проверка получения метрик от обеих БД
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ item.port }}/metrics"
+    return_content: true
+  register: mysql_metrics
+  until:
+    - mysql_metrics.status | default(0) == 200
+    - "'mysql_up 1' in (mysql_metrics.content | default(''))"
+  retries: 12
+  delay: 5
+  loop: "{{ mysql_exporters }}"
+  loop_control:
+    label: "{{ item.name }}"
+  changed_when: false

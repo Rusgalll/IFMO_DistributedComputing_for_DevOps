@@ -8,10 +8,10 @@
 
   tasks:
     - name: Подготовка зависимостей и каталогов для MySQL-модулей
-      ansible.builtin.import_tasks: tasks/mysql_modules.yml
+      ansible.builtin.import_tasks: tasks/mysql/mysql_modules.yml
 
     - name: Подготовка основного сервера MySQL
-      ansible.builtin.import_tasks: tasks/mysql.yml
+      ansible.builtin.import_tasks: tasks/mysql/mysql.yml
       vars:
         mysql_socket_volumes:
           - "{{ mysql_primary_socket_dir }}:/var/run/mysqld"
@@ -21,10 +21,10 @@
           --binlog-format=ROW
 
     - name: Подготовка реплики MySQL
-      ansible.builtin.import_tasks: tasks/mysql_replica.yml
+      ansible.builtin.import_tasks: tasks/mysql/mysql_replica.yml
 
     - name: Проверка подключения MySQL-модулей
-      ansible.builtin.import_tasks: tasks/mysql_connections.yml
+      ansible.builtin.import_tasks: tasks/mysql/mysql_connections.yml
 
     - name: Настройка и проверка репликации
-      ansible.builtin.import_tasks: tasks/mysql_replication.yml
+      ansible.builtin.import_tasks: tasks/mysql/mysql_replication.yml

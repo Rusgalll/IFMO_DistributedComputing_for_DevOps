@@ -1,0 +1,20 @@
+---
+- name: Создание пользователя мониторинга на основной БД и реплике
+  ansible.mysql.mysql_user:
+    login_unix_socket: "{{ item.socket_dir }}/mysqld.sock"
+    login_user: root
+    login_password: "{{ db_root_password | string }}"
+    config_file: ''
+    name: "{{ mysql_monitoring_user }}"
+    host: '%'
+    plugin: caching_sha2_password
+    plugin_auth_string: "{{ mysql_monitoring_password | string }}"
+    salt: monitoring-user-salt
+    priv: '*.*:PROCESS,REPLICATION CLIENT,SELECT'
+    resource_limits:
+      MAX_USER_CONNECTIONS: 3
+    # Пользователя создаём отдельно на каждом сервере, без передачи через репликацию.
+    sql_log_bin: false
+    state: present
+  loop: "{{ mysql_exporters }}"
+  no_log: true

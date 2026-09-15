@@ -8,10 +8,10 @@
 
   tasks:
     - name: Подготовка Docker
-      ansible.builtin.import_tasks: tasks/docker.yml
+      ansible.builtin.import_tasks: tasks/docker/docker.yml
 
     - name: Подготовка MySQL
-      ansible.builtin.import_tasks: tasks/mysql.yml
+      ansible.builtin.import_tasks: tasks/mysql/mysql.yml
 
     - name: Подготовка WordPress
-      ansible.builtin.import_tasks: tasks/wordpress.yml
+      ansible.builtin.import_tasks: tasks/wordpress/wordpress.yml
