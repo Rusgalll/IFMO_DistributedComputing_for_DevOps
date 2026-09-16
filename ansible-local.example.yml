@@ -1,0 +1,17 @@
+---
+ansible_host: "192.168.XXX.XXX"
+ansible_user: XXXXXXXX
+ansible_password: XXXXXXXX
+ansible_become_password: XXXXXXXX
+
+db_name: wordpress
+db_user: wordpress
+db_password: example
+db_root_password: example
+db_replication_password: replication_example
+
+mysql_monitoring_user: exporter
+mysql_monitoring_password: monitoring_example
+
+grafana_admin_user: admin
+grafana_admin_password: grafana_example
