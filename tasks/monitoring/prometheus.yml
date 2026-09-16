@@ -1,0 +1,60 @@
+---
+- name: Создание каталога конфигурации Prometheus
+  ansible.builtin.file:
+    path: /opt/wordpress/prometheus
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Создание конфигурации сбора метрик
+  ansible.builtin.template:
+    src: prometheus.yml.j2
+    dest: /opt/wordpress/prometheus/prometheus.yml
+    owner: root
+    group: root
+    mode: '0644'
+  register: prometheus_config
+
+- name: Создание тома для метрик Prometheus
+  community.docker.docker_volume:
+    name: prometheus_data
+    state: present
+
+- name: Запуск контейнера Prometheus
+  community.docker.docker_container:
+    name: prometheus
+    image: "{{ prometheus_image }}"
+    state: started
+    restart_policy: unless-stopped
+    restart: "{{ prometheus_config.changed }}"
+    networks:
+      - name: wordpress_network
+    published_ports:
+      - "{{ prometheus_port }}:9090"
+    volumes:
+      - /opt/wordpress/prometheus:/etc/prometheus:ro
+      - prometheus_data:/prometheus
+
+- name: Ожидание готовности Prometheus
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ prometheus_port }}/-/ready"
+  register: prometheus_ready
+  until: prometheus_ready.status | default(0) == 200
+  retries: 12
+  delay: 5
+  changed_when: false
+
+- name: Проверка сбора метрик обеих БД через Prometheus
+  ansible.builtin.uri:
+    url: >-
+      http://127.0.0.1:{{ prometheus_port }}/api/v1/query?query={{ 'mysql_up{job="mysql"}' | urlencode }}
+    return_content: true
+  register: prometheus_metrics
+  until:
+    - prometheus_metrics.status | default(0) == 200
+    - (prometheus_metrics.json | default({})).get('data', {}).get('result', []) | length == mysql_exporters | length
+    - (prometheus_metrics.json | default({})).get('data', {}).get('result', []) | map(attribute='value') | map('last') | unique | list == ['1']
+  retries: 12
+  delay: 5
+  changed_when: false

@@ -16,3 +16,6 @@
 
     - name: Запуск экспортёров метрик MySQL
       ansible.builtin.import_tasks: tasks/monitoring/mysql_exporters.yml
+
+    - name: Настройка Prometheus
+      ansible.builtin.import_tasks: tasks/monitoring/prometheus.yml

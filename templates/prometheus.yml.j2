@@ -1,0 +1,11 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: mysql
+    static_configs:
+{% for exporter in mysql_exporters %}
+      - targets: ['{{ exporter.name }}:9104']
+        labels:
+          instance: '{{ exporter.database_host }}'
+{% endfor %}

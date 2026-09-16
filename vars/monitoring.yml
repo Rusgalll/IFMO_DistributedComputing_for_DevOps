@@ -3,6 +3,9 @@ mysql_monitoring_user: exporter
 mysql_monitoring_password: monitoring_example
 mysql_exporter_image: prom/mysqld-exporter:v0.17.2
 
+prometheus_image: prom/prometheus:v3.14.0
+prometheus_port: 9090
+
 mysql_exporters:
   - name: mysql_exporter_primary
     database_host: wordpress_db
