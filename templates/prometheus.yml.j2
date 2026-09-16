@@ -9,3 +9,7 @@ scrape_configs:
         labels:
           instance: '{{ exporter.database_host }}'
 {% endfor %}
+
+  - job_name: cadvisor
+    static_configs:
+      - targets: ['cadvisor:8080']

@@ -1,0 +1,36 @@
+---
+- name: Запуск контейнера cAdvisor
+  community.docker.docker_container:
+    name: cadvisor
+    image: "{{ cadvisor_image }}"
+    state: started
+    restart_policy: unless-stopped
+    privileged: true
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    networks:
+      - name: wordpress_network
+    published_ports:
+      - "127.0.0.1:{{ cadvisor_port }}:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+
+- name: Проверка метрик CPU и памяти контейнеров MySQL
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ cadvisor_port }}/metrics"
+    return_content: true
+  register: cadvisor_metrics
+  until:
+    - cadvisor_metrics.status | default(0) == 200
+    - (cadvisor_metrics.content | default('')) is search('(?m)^container_cpu_usage_seconds_total\{[^\n]*name="' ~ item.database_host ~ '"')
+    - (cadvisor_metrics.content | default('')) is search('(?m)^container_memory_working_set_bytes\{[^\n]*name="' ~ item.database_host ~ '"')
+  retries: 20
+  delay: 5
+  loop: "{{ mysql_exporters }}"
+  loop_control:
+    label: "{{ item.database_host }}"
+  changed_when: false
