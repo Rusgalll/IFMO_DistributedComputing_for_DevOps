@@ -8,7 +8,7 @@
     command:
       - "--mysqld.address={{ item.database_host }}:3306"
       - "--mysqld.username={{ mysql_monitoring_user }}"
-      - --collect.slave_status
+      - --no-collect.slave_status
     env:
       MYSQLD_EXPORTER_PASSWORD: "{{ mysql_monitoring_password | string }}"
     networks:
