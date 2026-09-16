@@ -1,0 +1,68 @@
+---
+- name: Создание каталога источников данных Grafana
+  ansible.builtin.file:
+    path: /opt/wordpress/grafana/datasources
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Настройка подключения Grafana к Prometheus
+  ansible.builtin.copy:
+    src: grafana_datasources.yml
+    dest: /opt/wordpress/grafana/datasources/prometheus.yml
+    owner: root
+    group: root
+    mode: '0644'
+  register: grafana_datasource
+
+- name: Создание тома для данных Grafana
+  community.docker.docker_volume:
+    name: grafana_data
+    state: present
+
+- name: Запуск контейнера Grafana
+  community.docker.docker_container:
+    name: grafana
+    image: "{{ grafana_image }}"
+    state: started
+    restart_policy: unless-stopped
+    restart: "{{ grafana_datasource.changed }}"
+    env:
+      GF_SECURITY_ADMIN_USER: "{{ grafana_admin_user }}"
+      GF_SECURITY_ADMIN_PASSWORD: "{{ grafana_admin_password | string }}"
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+    networks:
+      - name: wordpress_network
+    published_ports:
+      - "{{ grafana_port }}:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - /opt/wordpress/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+  no_log: true
+
+- name: Ожидание готовности Grafana
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ grafana_port }}/api/health"
+  register: grafana_ready
+  until:
+    - grafana_ready.status | default(0) == 200
+    - (grafana_ready.json | default({})).get('database', '') == 'ok'
+  retries: 20
+  delay: 5
+  changed_when: false
+
+- name: Проверка подключения Grafana к Prometheus
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ grafana_port }}/api/datasources/uid/prometheus/health"
+    url_username: "{{ grafana_admin_user }}"
+    url_password: "{{ grafana_admin_password | string }}"
+    force_basic_auth: true
+  register: grafana_prometheus
+  until:
+    - grafana_prometheus.status | default(0) == 200
+    - (grafana_prometheus.json | default({})).get('status', '') == 'OK'
+  retries: 12
+  delay: 5
+  changed_when: false
+  no_log: true

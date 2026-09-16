@@ -19,3 +19,6 @@
 
     - name: Настройка Prometheus
       ansible.builtin.import_tasks: tasks/monitoring/prometheus.yml
+
+    - name: Настройка Grafana
+      ansible.builtin.import_tasks: tasks/monitoring/grafana.yml
